@@ -1,72 +1,51 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "log"
+	"database/sql"
+	"fmt"
+	"log"
 
-    _ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
+	"example/solid/model"
+	"example/solid/service"
 )
 
-type Order struct {
-    ID       int
-    Customer string
-    Products string
-    Total    float64
-    Status   string
-}
-
-type OrderSystem struct {
-    db *sql.DB
-}
-
-func NewOrderSystem(db *sql.DB) *OrderSystem {
-    return &OrderSystem{db: db}
-}
-
-func (s *OrderSystem) CreateOrder(customer string, products []string, total float64) error {
-    // Создание заказа в БД
-    _, err := s.db.Exec(
-        "INSERT INTO orders (customer, products, total, status) VALUES (?, ?, ?, ?)",
-        customer, fmt.Sprintf("%v", products), total, "pending",
-    )
-    if err != nil {
-        return err
-    }
-
-    // Отправка уведомления
-    s.sendEmailNotification(customer)
-
-    return nil
-}
-
-func (s *OrderSystem) sendEmailNotification(customer string) {
-    fmt.Printf("Уведомление отправлено клиенту %s\n", customer)
-}
-
 func main() {
-    db, err := sql.Open("sqlite3", "orders.db")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer db.Close()
+	db, err := sql.Open("sqlite3", "orders.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
-    _, err = db.Exec(`
-    CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        customer TEXT NOT NULL,
-        products TEXT NOT NULL,
-        total REAL NOT NULL,
-        status TEXT NOT NULL
-    )`)
-    if err != nil {
-        log.Fatal(err)
-    }
+	var repo model.RepositoryWriter = model.NewSQLiteRepository(db)
 
-    system := NewOrderSystem(db)
+	if initializer, ok := repo.(model.RepositoryInitializer); ok {
+		if err = initializer.Initialize(); err != nil {
+			log.Fatal(err)
+		}
+	}
 
-    err = system.CreateOrder("Иван", []string{"apple", "banana"}, 10.5)
-    if err != nil {
-        log.Fatal(err)
-    }
+	// --- Вариант 1: EmailSender ---
+	fmt.Println(model.MainOption1)
+	svc1 := service.NewOrderService(repo, model.NewEmailSender())
+	err = svc1.CreateOrder("Иван", []string{"apple", "banana"}, 10.5)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// --- Вариант 2: SMSSender ---
+	fmt.Println("\n" + model.MainOption2)
+	svc2 := service.NewOrderService(repo, model.NewSMSSender())
+	err = svc2.CreateOrder("Мария", []string{"orange", "grape"}, 25.0)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// --- Вариант 3: TelegramNotifier ---
+	fmt.Println("\n" + model.MainOption3)
+	svc3 := service.NewOrderService(repo, model.NewTelegramNotifier())
+	err = svc3.CreateOrder("Олег", []string{"coffee", "cake"}, 18.0)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
